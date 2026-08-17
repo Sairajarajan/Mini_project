@@ -6,7 +6,9 @@ node_modules/
 build/
 dist/
 *.log
-backend/data/
+backend/data/*
+!backend/data/README.md
+!backend/data/sample.csv
 backend/models/
 *.safetensors
 *.bin
