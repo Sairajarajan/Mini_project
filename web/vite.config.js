@@ -7,7 +7,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/ws": { target: "ws://localhost:8000", ws: true },
-      "/": { target: "http://localhost:8000", changeOrigin: true },
+      "/users": "http://localhost:8000",
+      "/alerts": "http://localhost:8000",
+      "/chat": "http://localhost:8000",
+      "/health": "http://localhost:8000",
+      "/config": "http://localhost:8000",
     },
   },
 });
