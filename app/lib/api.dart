@@ -7,11 +7,14 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// Aegis backend client. Change [base] to your server address.
 /// For Android emulator use http://10.0.2.2:8000
 class AegisApi {
+  AegisApi({http.Client? client}) : _client = client ?? http.Client();
+  final http.Client _client;
+
   static const String base = 'http://localhost:8000';
   static const String wsBase = 'ws://localhost:8000';
 
   Future<List<dynamic>> listUsers() async {
-    final res = await http.get(Uri.parse('$base/users'));
+    final res = await _client.get(Uri.parse('$base/users'));
     return jsonDecode(res.body) as List<dynamic>;
   }
 
@@ -21,7 +24,7 @@ class AegisApi {
     String email,
     String parentEmail,
   ) async {
-    await http.post(
+    await _client.post(
       Uri.parse('$base/users/upsert'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -35,17 +38,17 @@ class AegisApi {
 
   Future<void> heartbeat(String userId) async {
     try {
-      await http.post(Uri.parse('$base/users/heartbeat?user_id=$userId'));
+      await _client.post(Uri.parse('$base/users/heartbeat?user_id=$userId'));
     } catch (_) {}
   }
 
   Future<List<dynamic>> history(String me, String other) async {
-    final res = await http.get(Uri.parse('$base/chat/history/$me/$other'));
+    final res = await _client.get(Uri.parse('$base/chat/history/$me/$other'));
     return jsonDecode(res.body) as List<dynamic>;
   }
 
   Future<List<dynamic>> alerts(String userId) async {
-    final res = await http.get(Uri.parse('$base/alerts/$userId'));
+    final res = await _client.get(Uri.parse('$base/alerts/$userId'));
     return jsonDecode(res.body) as List<dynamic>;
   }
 

@@ -4,14 +4,15 @@ import 'api.dart';
 import 'chat_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.api});
+  final AegisApi? api;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _api = AegisApi();
+  late final AegisApi _api = widget.api ?? AegisApi();
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _parent = TextEditingController();

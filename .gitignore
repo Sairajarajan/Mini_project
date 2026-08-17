@@ -6,6 +6,8 @@ node_modules/
 build/
 dist/
 *.log
+.dart_tool/
+.idea/
 backend/data/*
 !backend/data/README.md
 !backend/data/sample.csv

@@ -114,9 +114,6 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
-  Color _badgeColor(String action) =>
-      action == 'block' ? Colors.red : action == 'warn' ? Colors.orange : Colors.green;
-
   @override
   Widget build(BuildContext context) {
     final others = _contacts.where((c) => c['user_id'] != widget.userId).toList();
@@ -155,7 +152,7 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
           ),
-          VerticalDivider(width: 1),
+          const VerticalDivider(width: 1),
           Expanded(
             child: Column(
               children: [

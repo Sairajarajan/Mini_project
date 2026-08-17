@@ -609,6 +609,54 @@ npm run dev                                    # http://localhost:5173
 #   chat_log: 25, alert_records: 18, users: 2  (all now 0)
 ```
 
+### Phase 12 — Flutter SDK install + first working build
+```powershell
+# winget has NO Flutter package -> direct download (1.79 GB):
+curl -L -o C:\flutter.zip "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.47.0-stable.zip"
+powershell -Command "Expand-Archive -Path 'C:\flutter.zip' -DestinationPath 'C:\' -Force"
+del C:\flutter.zip
+[Environment]::SetEnvironmentVariable("Path", "$env:Path;C:\flutter\bin", "Machine")
+flutter --version          # Flutter 3.47.0 stable
+flutter doctor              # [X] Android SDK (optional), [X] Visual Studio (needed only for -d windows),
+                            # [√] Chrome -> flutter run -d chrome works with NO extra installs
+
+# scaffold + deps (from the repo root: cd app):
+flutter create .            # generates android/ ios/ web/ windows/ etc. (keeps existing lib/ files)
+flutter pub get
+flutter analyze             # "No issues found!"
+flutter test                # 1 widget test -> "All tests passed!"
+flutter run -d chrome --web-port 5174
+```
+
+**Flutter issues found & fixed this phase:**
+- `package:http/http.dart` + `package:web_socket_channel` "Target of URI doesn't exist"
+  → a previous `flutter create .` had been run from **inside `app/lib/`**, duplicating
+  the whole project (`app/lib/pubspec.yaml`, `app/lib/.dart_tool/`, `app/lib/android/`, ...).
+  FIX: deleted every file in `app/lib/` except `main.dart`, `api.dart`, `login_page.dart`,
+  `chat_page.dart`; then `flutter clean; flutter pub get` (also deletes stale `pubspec.lock`).
+- `flutter_test` "isn't a dependency" → hand-written `pubspec.yaml` predated `flutter create`,
+  which never adds to an existing file. FIX: added `flutter_test: sdk: flutter` to
+  `dev_dependencies`.
+- Widget test crashed with `FormatException: Unexpected end of input` → `LoginPage` fires
+  a real HTTP call in `initState`; `flutter_test` blocks real network (returns empty body).
+  FIX: `AegisApi` now takes an injectable `http.Client`; `LoginPage`/`AegisApp` accept an
+  optional `api`; the test injects `MockClient` (`package:http/testing.dart`) returning `[]`.
+- Lint: removed unused `_badgeColor`, added `const` to `VerticalDivider`.
+
+### Phase 13 — Repo hygiene (secrets & big files stay OUT)
+```powershell
+# .env has the real Atlas password -> NOT committed (public repo!). setup.ps1 creates
+#   .env from .env.example on any machine:  powershell -ExecutionPolicy Bypass -File setup.ps1
+# data/cyberbullying_tweets.csv is 329 MB > GitHub 100 MB limit -> NOT committed.
+#   Link: https://huggingface.co/datasets/karthikarunr/Cyberbullying-Toxicity-Tweets
+#   Command: .\.venv\Scripts\python scripts\download_data.py
+#   committed instead: data/README.md + data/sample.csv (first 100 rows, 16 KB)
+# .venv/ (hundreds of MB of Windows binaries) -> NOT committed; requirements*.txt
+#   + setup.ps1 recreate it identically.
+# .gitignore now: backend/data/* with !backend/data/README.md !backend/data/sample.csv,
+#   plus .dart_tool/, .idea/ for Flutter.
+```
+
 ### Run everything in one go
 ```powershell
 # terminal 1 (backend):
@@ -675,20 +723,27 @@ git push
 
 ## Flutter app (mobile)
 
-The Flutter client is written (`app/`) but the SDK is not installed on the dev machine.
-To run it:
+Flutter **3.47.0 stable** is installed at `C:\flutter` (PATH already set). The app is
+fully scaffolded (`flutter create .` done), dependencies resolved, `flutter analyze`
+clean, 1 widget test passing.
 
 ```powershell
-# 1. Install Flutter SDK (https://docs.flutter.dev/get-started/install/windows)
-# 2. Scaffold platform folders + build
 cd app
-flutter create .          # generates android/ ios/ windows/ etc.
-flutter pub get
-flutter run               # Windows desktop, or an emulator/device
+flutter run -d chrome --web-port 5174    # fastest (no extra toolchain needed)
+flutter run -d windows                   # needs Visual Studio "Desktop C++" workload
+flutter run -d <android-device>          # needs Android SDK + USB debugging
 ```
 
-Change `AegisApi.base` in `app/lib/api.dart` to `http://10.0.2.2:8000`
-for the Android emulator.
+Pointers:
+- `AegisApi.base` (`app/lib/api.dart`) = `http://localhost:8000`. For the Android
+  emulator change it to `http://10.0.2.2:8000`.
+- Keep the backend running on port 8000; the app fetches profiles and connects via
+  WebSocket to `ws://localhost:8000/ws/chat`.
+- Do **NOT** run `flutter create` from inside `app/lib/` — it duplicates the project
+  and breaks package resolution (see Phase 12).
+- App screens: `lib/main.dart` (root), `lib/login_page.dart` (create/pick profile),
+  `lib/chat_page.dart` (contacts, chat, risk badges, parent-alert panel),
+  `lib/api.dart` (HTTP + WebSocket client, injectable for tests).
 
 ## Google OAuth (Sprint 3, pending)
 
