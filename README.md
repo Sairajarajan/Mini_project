@@ -418,52 +418,217 @@ review checklist. `test_e2e_ws.py` cleanup uses `DELETE /users/{user_id}`.
 
 ---
 
-## Commands Used (development log)
+## Complete Development Log (every step, every command)
 
-### Environment setup
+> Everything below was actually run on the dev machine (Windows 11, PowerShell 5.1,
+> Python 3.14.5, Node 24.16.0, Git 2.55.0, 371 GB free disk, CPU-only PyTorch).
+> `.env` values are shown without secrets.
+
+### Phase 0 — Environment discovery
 ```powershell
-python --version                                    # 3.14.5
+# checked what was installed
+python --version                                     # 3.14.5
+pip --version                                        # pip 26.1.1
+node --version                                       # v24.16.0
+npm --version                                        # 11.13.0
+flutter --version                                    # NOT INSTALLED (still pending)
+# disk space: 371.7 GB free on C:
+# checked PyTorch CPU availability for Python 3.14:
+python -m pip index versions torch --index-url https://download.pytorch.org/whl/cpu
+#   -> torch 2.13.0+cpu available
+# MongoDB on localhost:27017 -> NOT running (so Atlas is used via MONGODB_URI)
+```
+
+### Phase 1 — Backend environment (Sprint 1)
+```powershell
+cd backend
 python -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m pip install -r requirements-ml.txt
-.\.venv\Scripts\python -m pip install email-validator
-python -m pip index versions torch --index-url https://download.pytorch.org/whl/cpu   # 2.13.0+cpu
+.\.venv\Scripts\python -m pip install -r requirements.txt        # fastapi, uvicorn, websockets, python-dotenv, pydantic, pydantic-settings, motor, pymongo, python-multipart, httpx
+.\.venv\Scripts\python -m pip install -r requirements-ml.txt     # torch(cpu), transformers, detoxify, datasets, scikit-learn, pandas, numpy, sentencepiece, accelerate, peft
+.\.venv\Scripts\python -m pip install email-validator            # needed by pydantic EmailStr (Sprint 2 import fix)
+copy .env.example .env                                            # then fill MONGODB_URI with your Atlas string
+.\.venv\Scripts\python scripts\test_db.py                        # expect: MongoDB ping: True
+.\.venv\Scripts\python -m uvicorn app.main:app --port 8000       # run API
+# http://localhost:8000/health  -> {"status":"ok","db":true}
+# http://localhost:8000/docs    -> Swagger UI
 ```
 
-### Model downloads
+### Phase 2 — Model downloads (Sprint 2)
 ```powershell
-python -m pip install -U huggingface_hub
-hf download Qwen/Qwen2.5-1.5B-Instruct --local-dir models\Qwen2.5-1.5B-Instruct
-hf download unitary/toxic-bert          --local-dir models\toxic-bert
-.\.venv\Scripts\python scripts\download_models.py     # equivalent one-command
+python -m pip install -U huggingface_hub                          # installs `hf` CLI
+hf download Qwen/Qwen2.5-1.5B-Instruct --local-dir models\Qwen2.5-1.5B-Instruct   # ~3.1 GB
+hf download unitary/toxic-bert          --local-dir models\toxic-bert            # ~1.3 GB
+# equivalent one-command: .\.venv\Scripts\python scripts\download_models.py
+# models are gitignored (backend/models/) - GitHub rejects files >100 MB
 ```
 
-### Dataset + fine-tune
+### Phase 3 — Sprint 2 code (context classifier + decision engine + chat relay)
+
+**Files written this phase:** `app/services/classifier.py`, `app/services/decision.py`,
+`app/services/heartbeat.py`, `app/routers/users.py`, `app/routers/chat.py`,
+`app/routers/alerts.py`, `scripts/download_models.py`, `scripts/test_classifier.py`,
+`scripts/test_ws.py` + edits to `app/config.py`, `app/main.py`, `.env.example`.
+
+Key characters/values baked in:
+- Risk thresholds: `RISK_THRESHOLD_WARN=45`, `RISK_THRESHOLD_BLOCK=75`
+- Intent gating: `BLOCKED_INTENTS = {"exploitation", "grooming"}` — always block
+- Severe toxicity gate: `HIGH_TOXICITY = 0.9` → always block
+- Chat history context: last `HISTORY_LIMIT = 8` messages (chat_key = "|".join(sorted([u1,u2])))
+- LLM system prompt: output JSON only `{"intent","risk_score","reason"}`
+- Models loaded lazily in a worker thread (`asyncio.to_thread`) — never block the event loop
+- Heartbeat monitor: checks every `HEARTBEAT_CHECK_INTERVAL_HOURS=1` h,
+  alerts after `HEARTBEAT_INACTIVE_HOURS=48` h, one email per user (`alert_email_sent_for_inactive`)
+
+**Bugs found & fixed this phase:**
 ```powershell
-.\.venv\Scripts\python scripts\download_data.py          # cyberbullying CSV + PAN12 attempt
-.\.venv\Scripts\python scripts\train_lora.py --samples 2000
+# 1) Detoxify refused the HF dir:  Detoxify(model_type, checkpoint=dir) -> Permission denied
+#    (Detoxify's checkpoint expects its proprietary .ckpt via torch.load, not a HF folder)
+#    FIX: load toxic-bert directly with transformers (BertForSequenceClassification,
+#    6 labels: toxicity, severe_toxicity, obscene, threat, insult, identity_attack)
+#    and take sigmoid(logits). Same math, fully offline. (classifier.py _ToxicBert)
+
+# 2) from ..database import db -> db was None in routers
+#    (Python binds the imported name by VALUE at import time; connect_db() rebinding
+#     database.db was invisible) -> AttributeError: 'NoneType' object has no attribute 'users'
+#    FIX: routers now use `from .. import database` and access `database.db.*` dynamically
+#    (applies to users.py, chat.py, alerts.py, services/heartbeat.py)
+
+# 3) Mongo ObjectId not JSON-serializable -> 500 on /alerts and /chat/history
+#    FIX: alerts.py converts _id -> str; chat.py drops _id from history docs
 ```
 
-### Run + test
+**Verification:**
 ```powershell
-.\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
-.\.venv\Scripts\python scripts\test_db.py
-.\.venv\Scripts\python scripts\test_classifier.py
-.\.venv\Scripts\python scripts\test_ws.py
-.\.venv\Scripts\python scripts\test_speed.py        # cascade latency check
-cd web; npm install; npm run dev
+.\.venv\Scripts\python -c "from app.main import app; print('APP IMPORTS OK')"
+.\.venv\Scripts\python scripts\test_classifier.py     # 8 samples: greeting=0.0, grooming=85, exploitation=85
+.\.venv\Scripts\python scripts\test_ws.py             # Alice->Bob: "Hi Bob" deliver 0.1 / "meet at park alone" BLOCK 85
+```
+
+### Phase 4 — Git setup + first push (Sprint 2)
+```powershell
+# Git was NOT installed -> installed via winget:
+winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements --silent
+$env:Path += ";C:\Program Files\Git\bin"   # each new shell needs this
+git init
+git add .
+git commit -m "Sprint 2: ..."
+git branch -M main
+git remote add origin https://github.com/Sairajarajan/Mini_project.git
+git push -u origin main
+# remote already had Sprint 1 -> rejected push -> resolved:
+git pull --rebase origin main               # add/add conflicts on 5 files
+git checkout --ours <5 files>               # CAREFUL: in rebase --ours = ORIGIN version!
+git add <files>; git -c core.editor=true rebase --continue
+git push
+# NOTE: this rebase silently REVERTED main.py/config.py/.gitignore/README/.env.example
+# to the origin versions (lost Sprint 2 edits). Re-applied all edits, committed again.
+```
+
+### Phase 5 — Speed optimization (cascade) — "checking takes 15s" complaint
+```powershell
+# Symptom: every message ran Qwen2.5-1.5B on CPU -> 9-20 s even for "hi"
+# FIX (cascade) in classifier.py:
+#   - toxic-bert fast check FIRST (~0.05 s)
+#   - 40 risk keywords: meet, alone, secret, "don't tell", photos, naked, money,
+#     "where do you live", "your school", snapchat, webcam, "you and me", ...
+#   - LLM only if toxicity >= LLM_TRIGGER_TOXICITY (0.35) OR keyword hit
+#   - config: CASCADE=true, LLM_TRIGGER_TOXICITY=0.35,
+#     QWEN_MAX_NEW_TOKENS=56, QWEN_MAX_INPUT_TOKENS=256
+#   - models preload at startup (preload() task in lifespan) -> no 20 s first message
+# Result: normal chat 0.1-0.2 s; suspicious ~9 s
+# BUG found: with 40 tokens the LLM JSON got TRUNCATED (no closing }) -> dangerous
+# messages fell through as risk 0.1. FIX: token budget 56 + regex fallback parsing
+# (_INTENT_RE/_SCORE_RE/_REASON_RE) + fail-safe: if LLM triggered but unparseable,
+# risk >= warn threshold (never silently deliver).
+# Verified with scripts/test_speed.py
+```
+
+### Phase 6 — React web chat UI (Sprint 3)
+```powershell
+# files: web/package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/App.css
+cd web
+npm install
+npm run dev                                    # http://localhost:5173
+# vite.config.js proxies ONLY /ws /users /alerts /chat /health /config -> :8000
+# (initial "/" catch-all proxy broke serving the app itself -> 404; fixed)
+# UI: profile picker/create, contacts list, chat bubbles with deliver/warn/block badges
+# + risk score, "Parent alerts" panel, 60 s heartbeat (POST /users/heartbeat)
+# backend addition: GET /users (contact list)
+# verified: build compiles -> npm run build
+```
+
+### Phase 7 — ML scripts + Flutter code (Sprint 3)
+```powershell
+# scripts/download_data.py  -> data/cyberbullying_tweets.csv (239,465 rows)
+# scripts/train_lora.py     -> LoRA fine-tune Qwen2.5 (CPU: batch 2, grad_accum 4, lr 2e-4,
+#                              r=8, alpha=16, target_modules=[q,k,v,o]_proj) -> models/lora-aegis
+# classifier auto-attaches adapter when USE_LORA=true
+# dataset FIX: Zahra98/cyberbullying_tweets was REMOVED from HF Hub -> DatasetNotFoundError
+#   -> searched Hub API, verified karthikarunr/Cyberbullying-Toxicity-Tweets (239k rows)
+#   -> train_lora handles oh_label (0/1) mapping: 1->bullying, 0->neutral
+# app/ (Flutter): pubspec.yaml + lib/main.dart, api.dart, login_page.dart, chat_page.dart
+#   (mirror of the React UI; runs with: cd app; flutter create .; flutter pub get; flutter run)
+```
+
+### Phase 8 — New feature: recipient parent alert
+```powershell
+# Alice sends "I want to meet you alone" -> Bob:
+#   Alice's parent gets sent_improper ("your child behaved improperly")
+#   Bob's parent   gets received_toxic ("Your child Bob received an inappropriate message
+#                    from Alice: '...'")  -> NEW in chat.py _process_message
+# email wording: blocked=True -> "Aegis blocked this message before delivery"
+#                blocked=False (warn, delivered) -> "flagged ... and delivered to your child"
+# verified via /alerts/u_alice + /alerts/u_bob
+```
+
+### Phase 9 — Timezone fix (alert times were ~5.5 h early)
+```powershell
+# root cause: PyMongo returns datetimes as NAIVE UTC (BSON datetime has no tzinfo),
+# API sent "09:37" with no offset -> browser treated it as local time
+# FIX: routers stamp naive datetimes with timezone.utc before returning:
+#   alerts.py _clean(), chat.py history, users.py get_user
+# verified: API now returns "2026-08-17T09:37:40+00:00" -> UI shows local time
+```
+
+### Phase 10 — Sprint 4 (tests, metrics, diagram)
+```powershell
+.\.venv\Scripts\python -m pip install pytest pytest-asyncio
+# scripts/tests/test_core.py     14 unit tests (decision engine, cascade, toxicity, grooming)
+# scripts/tests/test_e2e_ws.py    5 E2E tests (server must be running)
+# scripts/metrics.py             16 labeled samples -> 100% accuracy, 0 FN, 0 FP
+#                                 fast path median 0.05 s / LLM path ~15 s
+# backend addition: DELETE /users/{user_id} (test cleanup)
+# keyword fix: "school" too broad -> "your school" / "which school" / "school name"
+# README: mermaid architecture diagram added
+```
+
+### Phase 11 — DB cleanup (test data removed on request)
+```powershell
+# deleted all test documents from MongoDB Atlas:
+#   chat_log: 25, alert_records: 18, users: 2  (all now 0)
+```
+
+### Run everything in one go
+```powershell
+# terminal 1 (backend):
+.\.venv\Scripts\python -m uvicorn app.main:app --port 8000
+# terminal 2 (web):
+cd web; npm run dev        # http://localhost:5173 -> open TWO tabs, create Alice & Bob
+# optional:
+.\.venv\Scripts\python -m pytest scripts\tests\test_core.py -q
+.\.venv\Scripts\python scripts\tests\test_e2e_ws.py
+.\.venv\Scripts\python scripts\metrics.py
 ```
 
 ### Git workflow for this repo
 ```powershell
-git init
-git add .
+$env:Path += ";C:\Program Files\Git\bin"       # after a fresh shell
+git status -sb                                  # check sync (main...origin/main)
+git add -A
 git commit -m "message"
-git branch -M main
-git remote add origin https://github.com/Sairajarajan/Mini_project.git
-git push -u origin main
-# after remote changes:
+git push
+# after remote changes (someone else pushed):
 git pull --rebase origin main
 git push
 ```
@@ -481,13 +646,32 @@ git push
   so the API sent `09:03` with no offset and browsers treated it as local time — alerts
   appeared ~5.5h early (UTC shown as local). All routers now stamp naive datetimes as
   UTC (`replace(tzinfo=timezone.utc)`) before returning, so the UI converts to local time.
+- **Detoxify incompatibility (fixed):** `Detoxify(checkpoint=<hf dir>)` expects its own
+  `.ckpt` format (`torch.load` of config+state_dict) and rejected the HF folder with
+  `Permission denied`. toxic-bert is loaded directly via `transformers` instead
+  (`BertForSequenceClassification`, 6 labels, `sigmoid(logits)`) — identical math, offline.
+- **Rebase hazard (learned):** in `git rebase`, `--ours` = the UPSTREAM version, not yours.
+  Resolving an add/add conflict with `--ours` reverted Sprint 2 files to the origin
+  versions. Always verify with `git diff` after `--ours`/`--theirs`.
+- **Vite proxy (fixed):** a `"/": proxy` catch-all also intercepted the app's own
+  index.html → 404. Only specific prefixes are proxied now (`/ws /users /alerts /chat /health /config`).
+- **LLM truncation (fixed):** with 40 `max_new_tokens` Qwen's JSON got cut mid-reason;
+  a message could fall through as safe. Now: 56 tokens + regex fallback parse
+  (`"intent"`/`"risk_score"`/`"reason"` extracted from truncated JSON) + fail-safe
+  (LLM-triggered-but-unparseable → risk ≥ warn threshold, never silently delivered).
+- **Keyword false positive (fixed):** "school" flagged benign "how was your day at school?".
+  Narrowed to "your school / which school / school name". Metrics went 93.8% → 100%.
 - **LLM fallback:** if Qwen is missing (`USE_LLM=false`), the system still works —
   risk score degrades to `toxicity * 100`.
 - **Intent gating:** `grooming` / `exploitation` intents always block, regardless of
   numeric score.
-- First Qwen inference takes ~20 s on CPU (model load); subsequent messages ~9-11 s.
-  Consider a smaller model or batching for production.
+- **Determinism:** greedy decoding (`do_sample=False`) + fixed thresholds → identical
+  results across machines (verified: 2 runs → same output). `torch` CPU can still show
+  small numeric variance across process runs.
+- First Qwen inference takes ~20 s on CPU (model load); subsequent messages ~9-15 s
+  (preload at startup removes the first-hit penalty).
 - `.env` is gitignored — **never commit** your MongoDB URI / Gmail app password.
+- PyMongo deletes: `delete_many({})` clears a collection; used for the test-data wipe.
 
 ## Flutter app (mobile)
 
