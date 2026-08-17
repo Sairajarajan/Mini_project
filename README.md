@@ -181,6 +181,10 @@ Edit `.env`:
 - Risk thresholds: `RISK_THRESHOLD_WARN=45`, `RISK_THRESHOLD_BLOCK=75`
 - `USE_LLM=true` — toggle the Qwen2.5 context classifier on/off
 - `USE_LORA=true` — attach trained LoRA adapter at `models/lora-aegis` (after `train_lora.py`)
+- `CASCADE=true` — fast path: toxic-bert + risk keywords first; the Qwen LLM runs only for
+  suspicious messages. **This is the speed optimization** (normal chat ~0.1-0.2 s vs ~10 s)
+- `LLM_TRIGGER_TOXICITY=0.35` — toxicity score that forces the LLM check
+- `QWEN_MAX_NEW_TOKENS=56` / `QWEN_MAX_INPUT_TOKENS=256` — LLM generation budget
 
 ### 4. Download models (once)
 
@@ -273,6 +277,24 @@ FastAPI + lifespan, Motor MongoDB client, Pydantic models, mock/SMTP email servi
 - ⏳ Flutter app: code written (`app/lib/`), needs Flutter SDK (see below)
 - ⏳ Google OAuth: needs a Google Cloud OAuth client (see "OAuth setup" below)
 
+### Sprint 3.5 ✅ — Inference speed (cascade)
+- **Problem:** every message ran Qwen2.5-1.5B on CPU → 9-20 s per message, even "hi".
+- **Fix (cascade):** toxic-bert fast check + 40 risk keywords first. The LLM only runs
+  when toxicity ≥ 0.35 OR a risk pattern matches. Result:
+  - normal chat ("hi", "how are you?", memes): **0.1-0.2 s**
+  - suspicious messages ("meet at park alone", "send me photos"): ~8.7 s (LLM, blocked)
+- **Truncation fix:** with 40 max_new_tokens the LLM's JSON got cut mid-reason and the
+  message fell through as safe. Fixed: token budget → 56, regex fallback parsing
+  (`"intent"`, `"risk_score"`, `"reason"` extracted even from truncated JSON), and a
+  **fail-safe** — if the LLM was triggered but output is unparseable, risk is raised to
+  at least the warn threshold (never silently delivered).
+- **Warm-up:** models now preload in the background at server startup (`preload()`),
+  so the first message doesn't pay the ~20 s model-load penalty.
+- **For even faster LLM checks** (optional): switch to the 0.5B model —
+  `hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir models\Qwen2.5-0.5B-Instruct`
+  then set `QWEN_MODEL_PATH=models\Qwen2.5-0.5B-Instruct` in `.env` (~2-4 s per LLM check).
+- Measured with `scripts/test_speed.py`.
+
 ### Sprint 4 — pending
 E2E tests, metrics, architecture diagram, final docs + PPTX.
 
@@ -311,6 +333,7 @@ hf download unitary/toxic-bert          --local-dir models\toxic-bert
 .\.venv\Scripts\python scripts\test_db.py
 .\.venv\Scripts\python scripts\test_classifier.py
 .\.venv\Scripts\python scripts\test_ws.py
+.\.venv\Scripts\python scripts\test_speed.py        # cascade latency check
 cd web; npm install; npm run dev
 ```
 

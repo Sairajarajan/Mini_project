@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import close_db, connect_db, ping_db
 from .routers import alerts, chat, users
+from .services.classifier import preload
 from .services.heartbeat import heartbeat_monitor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -22,8 +23,10 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("MongoDB NOT reachable - running without persistence")
     monitor = asyncio.create_task(heartbeat_monitor())
+    model_warmup = asyncio.create_task(preload())
     yield
     monitor.cancel()
+    model_warmup.cancel()
     await close_db()
 
 

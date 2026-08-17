@@ -23,6 +23,10 @@ class Settings:
     use_llm: bool = os.getenv("USE_LLM", "true").lower() == "true"
     lora_adapter_path: str = os.getenv("LORA_ADAPTER_PATH", os.path.join(model_dir, "lora-aegis"))
     use_lora: bool = os.getenv("USE_LORA", "false").lower() == "true"
+    cascade: bool = os.getenv("CASCADE", "true").lower() == "true"
+    llm_trigger_toxicity: float = float(os.getenv("LLM_TRIGGER_TOXICITY", "0.35"))
+    qwen_max_new_tokens: int = int(os.getenv("QWEN_MAX_NEW_TOKENS", "56"))
+    qwen_max_input_tokens: int = int(os.getenv("QWEN_MAX_INPUT_TOKENS", "256"))
 
 
 settings = Settings()
