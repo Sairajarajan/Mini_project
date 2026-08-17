@@ -35,6 +35,37 @@ increasingly connected world with proactive, **send-time** safety.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph Clients
+        UI1[React Web UI :5173]
+        UI2[Flutter App]
+    end
+    UI1 -- "WebSocket /ws/chat" --> API
+    UI2 -- "WebSocket /ws/chat" --> API
+
+    subgraph Backend[FastAPI Relay :8000]
+        API[chat router] --> BUF{Intercept Buffer<br/>holds message}
+        BUF --> C1[toxic-bert<br/>fast check ~0.05s]
+        C1 -- "suspicious? (tox ≥ 0.35<br/>or risk keyword)" --> C2[Qwen2.5-1.5B<br/>context scoring ~13s]
+        C1 -- "clean" --> DEC
+        C2 --> DEC{Decision Engine<br/>risk 0-100}
+        DEC -- "<45" --> DEL[deliver]
+        DEC -- "45-74" --> WARN[deliver + alert]
+        DEC -- "≥75 / grooming<br/>exploitation" --> BLOCK[reject + alert]
+        DEL --> UI1
+        WARN --> UI1
+    end
+
+    WARN --> ALERT[Guardian Alerts<br/>sent_improper -> sender's parent<br/>received_toxic -> recipient's parent]
+    BLOCK --> ALERT
+    ALERT --> EMAIL[Email mock / Gmail SMTP]
+    API --> DB[(MongoDB Atlas<br/>users, chat_log,<br/>alert_records, heartbeats)]
+    HB[heartbeat monitor<br/>48h inactive] --> ALERT
+```
+
+Text equivalent:
+
 ```
 Child Chat UI (React web / Flutter app)
         │  WebSocket
@@ -188,9 +219,10 @@ npm run dev                                     # http://localhost:5173
 
 # 9) Optional tests
 cd ..\backend
-.\.venv\Scripts\python scripts\test_classifier.py
-.\.venv\Scripts\python scripts\test_ws.py
-.\.venv\Scripts\python scripts\test_speed.py
+.\.venv\Scripts\python -m pip install pytest pytest-asyncio
+.\.venv\Scripts\python -m pytest scripts\tests\test_core.py -q       # 14 unit tests
+.\.venv\Scripts\python scripts\tests\test_e2e_ws.py                  # E2E (server running)
+.\.venv\Scripts\python scripts\metrics.py                            # accuracy + latency report
 ```
 
 **Alerts in demo mode (`EMAIL_MODE=mock`):** emails are printed to the backend terminal
@@ -361,8 +393,28 @@ FastAPI + lifespan, Motor MongoDB client, Pydantic models, mock/SMTP email servi
 - The email text distinguishes **blocked** ("Aegis blocked this message before delivery")
   from **warn** ("flagged and delivered") via the `blocked` context flag.
 
-### Sprint 4 — pending
-E2E tests, metrics, architecture diagram, final docs + PPTX.
+### Sprint 4 ✅ — Tests + metrics + docs
+- **Unit tests** (`scripts/tests/test_core.py`): decision engine thresholds, intent
+  gating, cascade fast path, toxic + grooming detection. `14 passed`.
+- **E2E WebSocket test** (`scripts/tests/test_e2e_ws.py`, needs running server):
+  safe message delivered, grooming blocked, alerts on BOTH parents. `5 passed`.
+- **Metrics** (`scripts/metrics.py`) on 16 labeled samples:
+
+  | Metric | Result |
+  |---|---|
+  | Accuracy | **100%** (16/16) |
+  | Unsafe detected (TP) | 10 |
+  | Missed (FN) | 0 |
+  | False alerts (FP) | 0 |
+  | Fast path latency (median) | **0.05 s** |
+  | LLM path latency (median) | ~15 s (CPU; ~2-4 s with 0.5B model) |
+- **Architecture diagram**: mermaid version added at the top (renders on GitHub).
+- Fix: keyword "school" was too broad (flagged "how was your day at school?");
+  narrowed to "your school / which school / school name" → FP eliminated.
+
+### Sprint 4 — remaining
+Update the PPTX slide deck with live metrics + architecture diagram; final
+review checklist. `test_e2e_ws.py` cleanup uses `DELETE /users/{user_id}`.
 
 ---
 
@@ -469,7 +521,7 @@ for the Android emulator.
 | 1 | Backend skeleton, MongoDB, email service, dataset, toxic-bert baseline | ✅ done |
 | 2 | Qwen2.5 LLM context classifier, decision engine, chat WebSocket relay | ✅ done |
 | 3 | React web chat + Flutter app, Google OAuth login | 🔶 in progress (web ✅, Flutter code ✅, OAuth pending) |
-| 4 | E2E tests, metrics, architecture diagram, final docs + PPTX | pending |
+| 4 | E2E tests, metrics, architecture diagram, final docs + PPTX | 🔶 in progress (tests ✅ metrics ✅ diagram ✅, PPTX pending) |
 
 ## Roadmap Extras
 

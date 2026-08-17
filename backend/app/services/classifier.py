@@ -28,7 +28,8 @@ _TOXIC_CLASSES = ["toxicity", "severe_toxicity", "obscene", "threat", "insult", 
 _CASCADE_KEYWORDS = [
     "meet", "alone", "secret", "don't tell", "dont tell", "tell your parents",
     "photo", "pictures", "naked", "undress", "clothes off", "your age",
-    "where do you live", "school", "parents", "money", "gift", "buy you",
+    "where do you live", "your school", "which school", "school name",
+    "parents", "money", "gift", "buy you",
     "cute", "love you", "private", "you and me", "after school", "hidden",
     "address", "snapchat", "instagram", "send me", "camera", "webcam",
     "kiss", "hug", "boyfriend", "girlfriend", "alone with",
@@ -259,6 +260,8 @@ async def classify(message: str, history: list[str] | None = None) -> Classifica
     low_llm = qwen_out and qwen_out["risk_score"] < 10
     if high_tox and low_llm:
         risk = max(risk, toxicity * 70.0)
+    if toxicity >= 0.9:
+        risk = max(risk, 80.0)
 
     return ClassificationResult(
         toxicity=round(toxicity, 4),

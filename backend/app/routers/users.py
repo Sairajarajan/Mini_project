@@ -46,6 +46,16 @@ async def list_users():
     return [{"user_id": u["_id"], "name": u.get("name", u["_id"]), "email": u.get("email", "")} async for u in cursor]
 
 
+@router.delete("/{user_id}")
+async def delete_user(user_id: str):
+    res = await _coll().delete_one({"_id": user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    await database.db.chat_log.delete_many({"sender_id": user_id, "recipient_id": user_id})
+    await database.db.alert_records.delete_many({"user_id": user_id})
+    return {"ok": True, "user_id": user_id}
+
+
 @router.post("/heartbeat")
 async def heartbeat(user_id: str):
     now = datetime.now(timezone.utc)
