@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime, timezone
+
 from bson import ObjectId
 
 from fastapi import APIRouter
@@ -13,6 +15,9 @@ def _clean(doc: dict) -> dict:
     doc = dict(doc)
     if isinstance(doc.get("_id"), ObjectId):
         doc["_id"] = str(doc["_id"])
+    for key, value in doc.items():
+        if isinstance(value, datetime) and value.tzinfo is None:
+            doc[key] = value.replace(tzinfo=timezone.utc)
     return doc
 
 

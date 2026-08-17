@@ -163,6 +163,13 @@ async def chat_history(user_id: str, other_id: str):
     chat_key = "|".join(sorted([user_id, other_id]))
     cursor = _coll("chat_log").find({"chat_key": chat_key}).sort("sent_at", 1).limit(100)
     return [
-        {**{k: v for k, v in d.items() if k != "_id"}}
+        {
+            **{k: v for k, v in d.items() if k != "_id"},
+            **{
+                k: v.replace(tzinfo=timezone.utc)
+                for k, v in d.items()
+                if isinstance(v, datetime) and v.tzinfo is None
+            },
+        }
         async for d in cursor
     ]

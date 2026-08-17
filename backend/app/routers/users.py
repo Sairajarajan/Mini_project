@@ -15,6 +15,14 @@ def _coll() -> AsyncIOMotorCollection:
     return database.db.users
 
 
+def _clean(doc: dict) -> dict:
+    doc = dict(doc)
+    for key, value in doc.items():
+        if isinstance(value, datetime) and value.tzinfo is None:
+            doc[key] = value.replace(tzinfo=timezone.utc)
+    return doc
+
+
 @router.post("/upsert")
 async def upsert_user(user: User):
     coll = _coll()
@@ -29,7 +37,7 @@ async def get_user(user_id: str):
     doc = await _coll().find_one({"_id": user_id})
     if doc is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return doc
+    return _clean(doc)
 
 
 @router.get("")

@@ -370,6 +370,10 @@ git push
   Routers now use `from .. import database` and access `database.db.*` dynamically.
 - **ObjectId serialization:** Mongo docs returned by `/alerts` and `/chat/history` were
   not JSON-serializable (`ObjectId`); alert docs now convert `_id` → str, history drops `_id`.
+- **Timezone bug (fixed):** PyMongo returns datetimes as *naive UTC* (BSON has no tzinfo),
+  so the API sent `09:03` with no offset and browsers treated it as local time — alerts
+  appeared ~5.5h early (UTC shown as local). All routers now stamp naive datetimes as
+  UTC (`replace(tzinfo=timezone.utc)`) before returning, so the UI converts to local time.
 - **LLM fallback:** if Qwen is missing (`USE_LLM=false`), the system still works —
   risk score degrades to `toxicity * 100`.
 - **Intent gating:** `grooming` / `exploitation` intents always block, regardless of
