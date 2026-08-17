@@ -1,0 +1,59 @@
+import logging
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, HTTPException
+from motor.motor_asyncio import AsyncIOMotorCollection
+
+from ..database import db
+from ..models import User
+
+logger = logging.getLogger("aegis.users")
+router = APIRouter(prefix="/users", tags=["users"])
+
+
+def _coll() -> AsyncIOMotorCollection:
+    return db.users
+
+
+@router.post("/upsert")
+async def upsert_user(user: User):
+    coll = _coll()
+    doc = user.model_dump()
+    doc["_id"] = user.google_id
+    await coll.replace_one({"_id": user.google_id}, doc, upsert=True)
+    return {"ok": True, "user_id": user.google_id}
+
+
+@router.get("/{user_id}")
+async def get_user(user_id: str):
+    doc = await _coll().find_one({"_id": user_id})
+    if doc is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return doc
+
+
+@router.post("/heartbeat")
+async def heartbeat(user_id: str):
+    now = datetime.now(timezone.utc)
+    res = await _coll().update_one(
+        {"_id": user_id},
+        {"$set": {"last_heartbeat": now}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, "last_heartbeat": now.isoformat()}
+
+
+async def users_stale(hours: int) -> list[dict]:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cursor = _coll().find(
+        {
+            "last_heartbeat": {"$lt": cutoff},
+            "alert_email_sent_for_inactive": {"$ne": True},
+        }
+    )
+    return [u async for u in cursor]
+
+
+async def mark_inactive_alerted(user_id: str) -> None:
+    await _coll().update_one({"_id": user_id}, {"$set": {"alert_email_sent_for_inactive": True}})
