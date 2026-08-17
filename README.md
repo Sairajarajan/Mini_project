@@ -144,6 +144,61 @@ No auth token required — both are open models. Files must land in `backend/mod
 
 ---
 
+## Quick Start (all commands in order)
+
+> Windows PowerShell. Python 3.13+, Node 20+, MongoDB Atlas URI required.
+
+```powershell
+# 1) Clone
+git clone https://github.com/Sairajarajan/Mini_project.git
+cd Mini_project
+
+# 2) Backend environment
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python -m pip install --upgrade pip
+.\.venv\Scripts\python -m pip install -r requirements.txt
+.\.venv\Scripts\python -m pip install -r requirements-ml.txt
+.\.venv\Scripts\python -m pip install email-validator
+
+# 3) Secrets  (edit .env -> put your MONGODB_URI, keep EMAIL_MODE=mock for demo)
+copy .env.example .env
+
+# 4) Models (~4.4 GB, one-time download)
+.\.venv\Scripts\python scripts\download_models.py
+
+# 5) Verify DB
+.\.venv\Scripts\python scripts\test_db.py        # expect: MongoDB ping: True
+
+# 6) Start backend  (terminal 1)
+.\.venv\Scripts\python -m uvicorn app.main:app --port 8000
+#    Swagger docs: http://localhost:8000/docs
+
+# 7) Start web chat UI  (terminal 2)
+cd ..\web
+npm install
+npm run dev                                     # http://localhost:5173
+
+# 8) Use it: open http://localhost:5173 in TWO browser tabs
+#    tab 1 -> create "Alice" (parent.alice@test.com)
+#    tab 2 -> create "Bob"   (parent.bob@test.com)
+#    Alice -> Bob: "hi"                 -> badge "deliver · risk 0.1" (instant)
+#    Alice -> Bob: "wanna meet at the park after school alone?"
+#                                      -> badge "block · risk 95" + parent alerts on both sides
+
+# 9) Optional tests
+cd ..\backend
+.\.venv\Scripts\python scripts\test_classifier.py
+.\.venv\Scripts\python scripts\test_ws.py
+.\.venv\Scripts\python scripts\test_speed.py
+```
+
+**Alerts in demo mode (`EMAIL_MODE=mock`):** emails are printed to the backend terminal
+instead of sent. Check the web UI "Parent alerts" panel, or
+http://localhost:8000/alerts (and /alerts/{user_id}).
+
+---
+
 ## Build & Run
 
 ### 1. Prerequisites
