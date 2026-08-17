@@ -93,27 +93,29 @@ async def _process_message(user_id: str, recipient_id: str, text: str) -> dict:
             )
     else:
         sender_name = await _user_name(user_id)
+        recipient_name = await _user_name(recipient_id)
+        blocked = decision.action == "block"
         if decision.action == "warn":
             await _coll("chat_log").insert_one(
                 {**msg.model_dump(), "chat_key": chat_key, "risk_score": result.risk_score}
             )
-            await _guardian_alert(
-                "sent_improper",
-                user_id,
-                child_name=sender_name,
-                sender_name=sender_name,
-                message=text,
-                reason=decision.reason,
-            )
-        else:
-            await _guardian_alert(
-                "sent_improper",
-                user_id,
-                child_name=sender_name,
-                sender_name=sender_name,
-                message=text,
-                reason=decision.reason,
-            )
+        await _guardian_alert(
+            "sent_improper",
+            user_id,
+            child_name=sender_name,
+            sender_name=sender_name,
+            message=text,
+            reason=decision.reason,
+        )
+        await _guardian_alert(
+            "received_toxic",
+            recipient_id,
+            child_name=recipient_name,
+            sender_name=sender_name,
+            message=text,
+            reason=decision.reason,
+            blocked=blocked,
+        )
 
     return {
         "type": "decision",

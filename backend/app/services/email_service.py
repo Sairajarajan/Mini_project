@@ -33,12 +33,18 @@ async def send_email(to: str, subject: str, body: str) -> bool:
 
 def alert_body(kind: str, **ctx) -> str:
     if kind == "received_toxic":
+        verb = (
+            "Aegis blocked this message before delivery."
+            if ctx.get("blocked", True)
+            else "Aegis flagged this message as inappropriate and delivered it to your child."
+        )
         return (
             f"Dear Parent,\n\nYour child {ctx['child_name']} received an "
             f"inappropriate message from {ctx['sender_name']}:\n\n"
             f"\"{ctx['message']}\"\n\n"
-            f"Aegis blocked this message before delivery.\n"
-            f"Reason: {ctx['reason']}\n\n- Aegis Guardian"
+            f"{verb}\n"
+            f"Reason: {ctx['reason']}\n\n"
+            f"Please talk to your child about online safety.\n\n- Aegis Guardian"
         )
     if kind == "sent_improper":
         return (

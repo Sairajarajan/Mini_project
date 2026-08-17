@@ -27,6 +27,9 @@ increasingly connected world with proactive, **send-time** safety.
 - **Guardian Alerts** — parents are notified by email only when a real threat exists:
   - Child **received** an inappropriate message → alert to child's parent (with message + sender)
   - Child **sent** an improper message → alert to sender's parent ("your child behaved improperly")
+  - **Both parents alerted** on warn/block: e.g. Alice sends "I want to meet you alone" to Bob →
+    Alice's parent gets `sent_improper` AND Bob's parent gets `received_toxic`
+    ("Your child Bob received an inappropriate message from Alice...")
   - App **uninstalled/stopped** (no heartbeat for 48h) → warning email to parent
 - **Privacy-preserving** — only alerts are sent, not full chat logs
 
@@ -294,6 +297,14 @@ FastAPI + lifespan, Motor MongoDB client, Pydantic models, mock/SMTP email servi
   `hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir models\Qwen2.5-0.5B-Instruct`
   then set `QWEN_MODEL_PATH=models\Qwen2.5-0.5B-Instruct` in `.env` (~2-4 s per LLM check).
 - Measured with `scripts/test_speed.py`.
+
+### Sprint 3.6 ✅ — Recipient parent alert
+- On warn/block, the **recipient's parent** is now also emailed (`received_toxic`):
+  "Your child Bob received an inappropriate message from Alice" + message + reason.
+  Sender's parent still gets `sent_improper` as before. Both alerts are stored in
+  `alert_records` and visible per-child in the web UI "Parent alerts" panel.
+- The email text distinguishes **blocked** ("Aegis blocked this message before delivery")
+  from **warn** ("flagged and delivered") via the `blocked` context flag.
 
 ### Sprint 4 — pending
 E2E tests, metrics, architecture diagram, final docs + PPTX.
