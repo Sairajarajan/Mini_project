@@ -33,8 +33,10 @@ def build_samples(path: Path) -> list[tuple[str, str]]:
     import pandas as pd
 
     df = pd.read_csv(path)
+    text_col = "Text" if "Text" in df.columns else ("tweet_text" if "tweet_text" in df.columns else df.columns[0])
+    if "oh_label" in df.columns:
+        return [(str(r[text_col])[:512], "bullying" if r["oh_label"] == 1 else "neutral") for _, r in df.iterrows()]
     label_col = "cyberbullying_type" if "cyberbullying_type" in df.columns else df.columns[-1]
-    text_col = "tweet_text" if "tweet_text" in df.columns else df.columns[0]
     labels = {
         "not_cyberbullying": "neutral",
         "gender": "bullying",

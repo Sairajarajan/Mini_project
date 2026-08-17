@@ -6,7 +6,7 @@ Usage:
     python scripts/download_data.py --cyberbullying
 
 Outputs land in backend/data/:
-  data/cyberbullying_tweets.csv   - labeled cyberbullying/not (HF: Zahra98/cyberbullying_tweets)
+  data/cyberbullying_tweets.csv   - labeled cyberbullying/not (HF: karthikarunr/Cyberbullying-Toxicity-Tweets, 239k rows)
   data/pan12_grooming/            - PAN12 grooming dataset (manual, see below)
 
 PAN12 note: the official PAN12 dataset requires a web request at
@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
-CYBERBULLYING_REPO = "Zahra98/cyberbullying_tweets"
+CYBERBULLYING_REPO = "karthikarunr/Cyberbullying-Toxicity-Tweets"
 PAN12_MIRRORS = [
     # unofficial HF mirrors (may or may not exist over time)
     "wajidlinux99/grooming-dataset-pan12",
