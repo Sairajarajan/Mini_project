@@ -2,8 +2,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from .. import database
 from ..config import settings
-from ..database import db
 from ..services.email_service import alert_body, send_email
 
 logger = logging.getLogger("aegis.heartbeat")
@@ -12,7 +12,7 @@ logger = logging.getLogger("aegis.heartbeat")
 async def heartbeat_monitor():
     while True:
         try:
-            cursor = db.users.find(
+            cursor = database.db.users.find(
                 {
                     "last_heartbeat": {"$ne": None},
                     "alert_email_sent_for_inactive": {"$ne": True},
@@ -41,7 +41,7 @@ async def heartbeat_monitor():
                                 last_seen=last_dt.isoformat(),
                             ),
                         )
-                        await db.alert_records.insert_one(
+                        await database.db.alert_records.insert_one(
                             {
                                 "alert_type": "app_inactive",
                                 "user_id": user["_id"],
@@ -52,7 +52,7 @@ async def heartbeat_monitor():
                                 "created_at": datetime.now(timezone.utc),
                             }
                         )
-                    await db.users.update_one(
+                    await database.db.users.update_one(
                         {"_id": user["_id"]},
                         {"$set": {"alert_email_sent_for_inactive": True}},
                     )

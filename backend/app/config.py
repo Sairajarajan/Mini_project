@@ -17,6 +17,12 @@ class Settings:
     heartbeat_check_interval_hours: int = int(os.getenv("HEARTBEAT_CHECK_INTERVAL_HOURS", "1"))
     risk_threshold_warn: float = float(os.getenv("RISK_THRESHOLD_WARN", "45"))
     risk_threshold_block: float = float(os.getenv("RISK_THRESHOLD_BLOCK", "75"))
+    model_dir: str = os.getenv("MODEL_DIR", os.path.join(os.path.dirname(__file__), "..", "models"))
+    qwen_model_path: str = os.getenv("QWEN_MODEL_PATH", os.path.join(model_dir, "Qwen2.5-1.5B-Instruct"))
+    toxic_bert_path: str = os.getenv("TOXIC_BERT_PATH", os.path.join(model_dir, "toxic-bert"))
+    use_llm: bool = os.getenv("USE_LLM", "true").lower() == "true"
+    lora_adapter_path: str = os.getenv("LORA_ADAPTER_PATH", os.path.join(model_dir, "lora-aegis"))
+    use_lora: bool = os.getenv("USE_LORA", "false").lower() == "true"
 
 
 settings = Settings()

@@ -7,3 +7,6 @@ build/
 dist/
 *.log
 backend/data/
+backend/models/
+*.safetensors
+*.bin

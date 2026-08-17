@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from motor.motor_asyncio import AsyncIOMotorCollection
 
-from ..database import db
+from .. import database
 from ..models import ChatMessage
 from ..services.classifier import classify
 from ..services.decision import decide
@@ -20,7 +20,7 @@ connections: dict[str, WebSocket] = {}
 
 
 def _coll(name: str) -> AsyncIOMotorCollection:
-    return db[name]
+    return database.db[name]
 
 
 async def _history(chat_key: str) -> list[str]:
@@ -101,6 +101,7 @@ async def _process_message(user_id: str, recipient_id: str, text: str) -> dict:
                 "sent_improper",
                 user_id,
                 child_name=sender_name,
+                sender_name=sender_name,
                 message=text,
                 reason=decision.reason,
             )
@@ -109,6 +110,7 @@ async def _process_message(user_id: str, recipient_id: str, text: str) -> dict:
                 "sent_improper",
                 user_id,
                 child_name=sender_name,
+                sender_name=sender_name,
                 message=text,
                 reason=decision.reason,
             )
@@ -158,4 +160,7 @@ async def ws_chat(ws: WebSocket, user_id: str):
 async def chat_history(user_id: str, other_id: str):
     chat_key = "|".join(sorted([user_id, other_id]))
     cursor = _coll("chat_log").find({"chat_key": chat_key}).sort("sent_at", 1).limit(100)
-    return [d async for d in cursor]
+    return [
+        {**{k: v for k, v in d.items() if k != "_id"}}
+        async for d in cursor
+    ]

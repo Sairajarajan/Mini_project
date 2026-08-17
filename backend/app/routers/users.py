@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from motor.motor_asyncio import AsyncIOMotorCollection
 
-from ..database import db
+from .. import database
 from ..models import User
 
 logger = logging.getLogger("aegis.users")
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 def _coll() -> AsyncIOMotorCollection:
-    return db.users
+    return database.db.users
 
 
 @router.post("/upsert")
@@ -30,6 +30,12 @@ async def get_user(user_id: str):
     if doc is None:
         raise HTTPException(status_code=404, detail="User not found")
     return doc
+
+
+@router.get("")
+async def list_users():
+    cursor = _coll().find({}, {"_id": 1, "name": 1, "email": 1})
+    return [{"user_id": u["_id"], "name": u.get("name", u["_id"]), "email": u.get("email", "")} async for u in cursor]
 
 
 @router.post("/heartbeat")

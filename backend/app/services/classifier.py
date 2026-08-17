@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 from ..config import settings
@@ -97,6 +98,12 @@ def _load_qwen_sync() -> Any:
         device_map="cpu",
         torch_dtype="auto",
     )
+    if settings.use_lora and (settings.lora_adapter_path and Path(settings.lora_adapter_path).exists()):
+        from peft import PeftModel
+
+        logger.info("Attaching LoRA adapter: %s", settings.lora_adapter_path)
+        model = PeftModel.from_pretrained(model, settings.lora_adapter_path, local_files_only=True)
+        logger.info("LoRA attached.")
     model.eval()
     logger.info("Qwen2.5 loaded.")
     return tokenizer, model
